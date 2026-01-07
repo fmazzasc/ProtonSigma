@@ -1,0 +1,13 @@
+# 23Thin
+SE: /alice/cern.ch/user/a/alihyperloop/outputs/0057/579525/187240/
+ME: /alice/cern.ch/user/a/alihyperloop/outputs/0058/581246/189355/
+
+# 24MB
+SE: /alice/cern.ch/user/a/alihyperloop/outputs/0057/576972/184800/
+ME: /alice/cern.ch/user/a/alihyperloop/outputs/0058/580858/187786/
+
+
+# MC, 24f4d
+SE: /alice/cern.ch/user/a/alihyperloop/outputs/0058/584608/190279
+ME: /alice/cern.ch/user/a/alihyperloop/outputs/0058/584609/190280
+
