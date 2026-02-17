@@ -2,6 +2,39 @@ import ROOT
 import argparse
 
 ROOT.gInterpreter.Declare("""
+float calcPnew(float pxMother, float pyMother, float pzMother, float pxDaughter, float pyDaughter, float pzDaughter) {
+    // first get versor of the mother particle
+    float massPion = 0.13957; // GeV/c^2
+    float massNeutron = 0.93957; // GeV/c^2
+    float massSigmaMinus = 1.19745; // GeV/c^2
+    float pMother = sqrt(pxMother*pxMother + pyMother*pyMother + pzMother*pzMother);
+    float versorX = pxMother / pMother;
+    float versorY = pyMother / pMother;
+    float versorZ = pzMother / pMother;
+    float ePi = sqrt(massPion*massPion + pxDaughter*pxDaughter + pyDaughter*pyDaughter + pzDaughter*pzDaughter);
+    // scalar product of the versor with the daughter momentum
+    float a = versorX * pxDaughter + versorY * pyDaughter + versorZ * pzDaughter;
+    float K = massSigmaMinus*massSigmaMinus + massPion*massPion - massNeutron*massNeutron;                    
+    float A = 4 * (ePi*ePi - a*a);
+    float B = - 4 * a * K;
+    float C = 4 * ePi*ePi * massSigmaMinus*massSigmaMinus - K*K;
+    if (std::abs(A) < 1e-6f) return -999.f;
+    float D = B*B - 4.f*A*C;
+    if (D < 0.f) return -999.f;
+    float sqrtD = std::sqrt(D);
+    float P1 = (-B + sqrtD)/(2.f*A);
+    float P2 = (-B - sqrtD)/(2.f*A);
+    // pick a physical solution: P2 if positive, otherwise P1
+    if (P2 < 0.f && P1 < 0.f) return -999.f;                      
+    if (P2 < 0.f) return P1;
+    float p1Diff = std::abs(P1 - pMother);
+    float p2Diff = std::abs(P2 - pMother);
+    float P = (p1Diff < p2Diff) ? P1 : P2;
+    return P;        
+}
+""")
+
+ROOT.gInterpreter.Declare("""
 float calcKstar(float pxSig, float pySig, float pzSig, float pxPr, float pyPr, float pzPr, float mSig, float mPr) {
     TLorentzVector sigVec;  
     TLorentzVector prVec;
@@ -46,6 +79,28 @@ float calcKinkAngle(float pxMother, float pyMother, float pzMother, float pxDaug
 }
 """)
 
+ROOT.gInterpreter.Declare("""
+float armAlpha(float pxMother, float pyMother, float pzMother, float pxDaughter, float pyDaughter, float pzDaughter) {
+    std::array<float, 3> momMissing = {pxMother - pxDaughter, pyMother - pyDaughter, pzMother - pzDaughter};
+    std::array<float, 3> momKink = {pxDaughter, pyDaughter, pzDaughter};
+    std::array<float, 3> momMother = {pxMother, pyMother, pzMother};
+    float lQlP = std::inner_product(momMother.begin(), momMother.end(), momKink.begin(), 0.f);
+    float lQlN = std::inner_product(momMother.begin(), momMother.end(), momMissing.begin(), 0.f);
+    return (lQlP - lQlN) / (lQlP + lQlN);
+}
+""")
+
+ROOT.gInterpreter.Declare("""
+float armQt(float pxMother, float pyMother, float pzMother, float pxDaughter, float pyDaughter, float pzDaughter) {
+    std::array<float, 3> momKink = {pxDaughter, pyDaughter, pzDaughter};
+    std::array<float, 3> momMother = {pxMother, pyMother, pzMother};
+    float dp = std::inner_product(momMother.begin(), momMother.end(), momKink.begin(), 0.f);
+    float p2V0 = std::inner_product(momMother.begin(), momMother.end(), momMother.begin(), 0.f);
+    float p2A = std::inner_product(momKink.begin(), momKink.end(), momKink.begin(), 0.f);
+    return std::sqrt(p2A - dp * dp / p2V0);
+}
+""")
+
 ## enable parallel processing
 ROOT.ROOT.EnableImplicitMT()
 
@@ -54,11 +109,16 @@ parser = argparse.ArgumentParser(description='Analyze Sigma-Proton pairs to calc
 parser.add_argument('--mc', action='store_true', help='Analyze MC data')
 parser.add_argument('--me', action='store_true', help='Analyze ME data')
 parser.add_argument('--bantib', action='store_true', help='Analyze b-anti-b pairs')
+parser.add_argument('--output_dir', type=str, default="results", help='Directory to save output ROOT file')
+parser.add_argument('--mom_recal', action='store_true', help='Apply momentum recalculation')
 
 args = parser.parse_args()
 is_mc = args.mc
 is_me = args.me
 is_bantib = args.bantib
+output_dir = args.output_dir
+mom_recal = args.mom_recal
+
 bantib_cut = is_bantib and "fChargeSigma * fChargePr > 0" or "fChargeSigma * fChargePr < 0"
 suffix_bantib = is_bantib and "_bantib" or ""
 print('----------------------------------')
@@ -83,37 +143,47 @@ for fileName in file_data_list:
         chainData.Add(f'{fileName}/{keyName}/{tree_name}')
 dataDf = ROOT.RDataFrame(chainData)
 print(f"Data entries: {dataDf.Count().GetValue()}")
-## calc kstar and add as new columns
 
+dataDf = dataDf.Define("fPNew", "calcPnew(fPxMoth, fPyMoth, fPzMoth, fPxDaug, fPyDaug, fPzDaug)")
+dataDf = dataDf.Define("fPxMothNew", "fPNew * fPxMoth / sqrt(fPxMoth*fPxMoth + fPyMoth*fPyMoth + fPzMoth*fPzMoth)")
+dataDf = dataDf.Define("fPyMothNew", "fPNew * fPyMoth / sqrt(fPxMoth*fPxMoth + fPyMoth*fPyMoth + fPzMoth*fPzMoth)")
+dataDf = dataDf.Define("fPzMothNew", "fPNew * fPzMoth / sqrt(fPxMoth*fPxMoth + fPyMoth*fPyMoth + fPzMoth*fPzMoth)")
 
-dataDf = dataDf.Define("fKstar", "calcKstar(fPxMoth, fPyMoth, fPzMoth, fPxPr, fPyPr, fPzPr, 1.1965, 0.93827)")  # masses in GeV/c2
+if mom_recal:
+    dataDf = dataDf.Define("fKstar", "calcKstar(fPxMothNew, fPyMothNew, fPzMothNew, fPxPr, fPyPr, fPzPr, 1.1965, 0.93827)")  # masses in GeV/c2
+else:
+    dataDf = dataDf.Define("fKstar", "calcKstar(fPxMoth, fPyMoth, fPzMoth, fPxPr, fPyPr, fPzPr, 1.1965, 0.93827)")  # masses in GeV/c2
+
 dataDf = dataDf.Define("fMassSigma", "calcMass(fPxMoth, fPyMoth, fPzMoth, 0.938272, fPxDaug, fPyDaug, fPzDaug, 0.13957)")  # masses in GeV/c2
 dataDf = dataDf.Define("fKinkAngle", "calcKinkAngle(fPxMoth, fPyMoth, fPzMoth, fPxDaug, fPyDaug, fPzDaug)")  # masses in GeV/c2
+dataDf = dataDf.Define("fArmAlpha", "armAlpha(fPxMoth, fPyMoth, fPzMoth, fPxDaug, fPyDaug, fPzDaug)")  # masses in GeV/c2
+dataDf = dataDf.Define("fArmQt", "armQt(fPxMoth, fPyMoth, fPzMoth, fPxDaug, fPyDaug, fPzDaug)")  # masses in GeV/c2
 dataDf = dataDf.Define("fPtProton", "sqrt(fPxPr * fPxPr + fPyPr * fPyPr)")
 dataDf = dataDf.Define("fSigmaPt", "sqrt(fPxMoth * fPxMoth + fPyMoth * fPyMoth)")
 
 
-
 dataDf = dataDf.Filter(bantib_cut)
 dataSideBand = dataDf.Filter("fMassSigma > 1.25")  # side-band upper
-dataDf = dataDf.Filter("fSigmaPt > 1.2 && fSigmaPt < 3")  # pt cut
-hMassVsKStarBefCuts = dataDf.Histo2D(("hMassVsKStarBefCuts", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 100, 1.1, 1.3, 100, 0., 3), "fMassSigma", "fKstar")
-dataDf = dataDf.Filter("fMassSigma > 1.19 && fMassSigma < 1.21")  # mass window cut
+dataDf = dataDf.Filter("fArmQt < 0.2")  # kink angle cut
+hMassVsKStarBefCuts = dataDf.Histo2D(("hMassVsKStarBefCuts", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 100, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
+dataDf = dataDf.Filter("fMassSigma > 1.18 && fMassSigma < 1.22 && fSigmaPt > 1.2")  # signal region
 
 ## create histogram of kstar
-hKstarData = dataDf.Histo1D(("hKstarData", ";k* (GeV/#it{c});Counts", 100, 0., 3), "fKstar")
+hKstarData = dataDf.Histo1D(("hKstarData", ";k* (GeV/#it{c});Counts", 300, 0., 3), "fKstar")
+hArmAlpha = dataDf.Histo1D(("hArmAlpha", ";Armenteros Alpha;Counts", 100, -1, 1), "fArmAlpha")
+hArmQt = dataDf.Histo1D(("hArmQt", ";Armenteros Qt (GeV/#it{c});Counts", 100, 0., 0.5), "fArmQt")
 hMassSigmaData = dataDf.Histo1D(("hMassSigmaData", ";Mass #Sigma (GeV/#it{c}^{2});Counts", 100, 1.1, 1.3), "fMassSigma")
 hKinkAngleData = dataDf.Histo1D(("hKinkAngleData", ";Kink Angle (rad);Counts", 100, 0., 1.5), "fKinkAngle")
 hPtProtonData = dataDf.Histo1D(("hPtProtonData", ";#it{p}_{T} proton (GeV/#it{c});Counts", 100, 0., 5), "fPtProton")
 hPtSigmaData = dataDf.Histo1D(("hPtSigmaData", ";#it{p}_{T} #Sigma (GeV/#it{c});Counts", 100, 0., 5), "fSigmaPt")
-hKStarVsMassSigma = dataDf.Histo2D(("hKStarVsMassSigma", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 100, 1.1, 1.3, 100, 0., 3), "fMassSigma", "fKstar")
-hKStarVsPtSigma = dataDf.Histo2D(("hKStarVsPtSigma", ";#it{p}_{T} #Sigma (GeV/#it{c});k* (GeV/#it{c})", 100, 0., 5, 100, 0., 3), "fSigmaPt", "fKstar")
+hKStarVsMassSigma = dataDf.Histo2D(("hKStarVsMassSigma", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 100, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
+hKStarVsPtSigma = dataDf.Histo2D(("hKStarVsPtSigma", ";#it{p}_{T} #Sigma (GeV/#it{c});k* (GeV/#it{c})", 100, 0., 5, 300, 0., 3), "fSigmaPt", "fKstar")
 hKStarSideband = dataSideBand.Histo1D(("hKStarSideband", ";k* (GeV/#it{c});Counts", 100, 0., 3), "fKstar")
 
 if is_mc:
     dataDfSigma = dataDf.Filter("abs(fSigmaPDG)==3112")  # signal sample
     dataDfSigmaSideband = dataSideBand.Filter("abs(fSigmaPDG)==3112")  # signal sample in sideband
-    dataBkg = dataDf.Filter("abs(fSigmaPDG)!=3112")  # background sample
+    dataBkg = dataDf.Filter("abs(fSigmaPDG)!=3112 && abs(fSigmaPDG)!=3222")  # background sample
     dataSigmaPlus = dataDf.Filter("abs(fSigmaPDG)==3222")
     ## create histogram of kstar for background
 
@@ -126,7 +196,8 @@ if is_mc:
     hKinkAngleSignal = dataDfSigma.Histo1D(("hKinkAngleSignal", ";Kink Angle (rad);Counts", 100, 0., 1.5), "fKinkAngle")
     hPtSignal = dataDfSigma.Histo1D(("hPtSigmaSignal", ";#it{p}_{T} #Sigma (GeV/#it{c});Counts", 100, 0., 5), "fSigmaPt")
 
-    hKstarBkg = dataBkg.Histo1D(("hKstarBkg", ";k* (GeV/#it{c});Counts", 100, 0., 3), "fKstar") 
+    hKstarBkg = dataBkg.Histo1D(("hKstarBkg", ";k* (GeV/#it{c});Counts", 300, 0., 3), "fKstar") 
+    h2KstarMassSigmaBkg = dataBkg.Histo2D(("h2KstarMassSigmaBkg", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 30, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
     hMassSigmaBkg = dataBkg.Histo1D(("hMassSigmaBkg", ";Mass #Sigma (GeV/#it{c}^{2});Counts", 100, 1.1, 1.3), "fMassSigma")
     hKinkAngleBkg = dataBkg.Histo1D(("hKinkAngleBkg", ";Kink Angle (rad);Counts", 100, 0., 1.5), "fKinkAngle")
 
@@ -152,9 +223,11 @@ if is_mc:
     # hPDGMomVsDau = dataBkgLowKstar.Histo2D(("hPDGMomVsDau", ";Mother PDG;Daughter PDG", 20000, -10000, 10000, 2000, -10000, 10000), "fSigmaPDG", "fDaughterPDG")
     
 
-outfile = ROOT.TFile(f"results/kstar_sigma_proton_analysis{suffix_mc}{suffix_me}{suffix_bantib}.root", "recreate")
+outfile = ROOT.TFile(f"{output_dir}/kstar_sigma_proton_analysis{suffix_mc}{suffix_me}{suffix_bantib}.root", "recreate")
 hMassVsKStarBefCuts.Write()
 hKstarData.Write()
+hArmAlpha.Write()
+hArmQt.Write()
 hMassSigmaData.Write()
 hKinkAngleData.Write()
 hPtProtonData.Write()
@@ -171,6 +244,7 @@ if is_mc:
     hDecRadVsKstarSigmaMinus.Write()
     hDecRadVsKstarSigmaPlus.Write()
     hKstarBkg.Write()
+    h2KstarMassSigmaBkg.Write()
     hMassSigmaBkg.Write()
     hKinkAngleBkg.Write()
     hPurityKstar.Write()
