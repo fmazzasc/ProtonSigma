@@ -122,9 +122,9 @@ mom_recal = args.mom_recal
 bantib_cut = is_bantib and "fChargeSigma * fChargePr > 0" or "fChargeSigma * fChargePr < 0"
 suffix_bantib = is_bantib and "_bantib" or ""
 print('----------------------------------')
-print("Analyzing with options - MC:", is_mc, " ME:", is_me, " b-anti-b:", is_bantib)
+print("Analyzing with options - MC:", is_mc, " ME:", is_me, " b-anti-b:", is_bantib, " Momentum Recalculation:", mom_recal)
 
-suffix_mc = "_MC" if is_mc else ""
+suffix_mc = "_MC_new" if is_mc else ""
 suffix_me = "_ME" if is_me else ""
 mc_dir = "mc"
 data_dir = "23_thin"
@@ -151,22 +151,23 @@ dataDf = dataDf.Define("fPzMothNew", "fPNew * fPzMoth / sqrt(fPxMoth*fPxMoth + f
 
 if mom_recal:
     dataDf = dataDf.Define("fKstar", "calcKstar(fPxMothNew, fPyMothNew, fPzMothNew, fPxPr, fPyPr, fPzPr, 1.1965, 0.93827)")  # masses in GeV/c2
+    dataDf = dataDf.Define("fSigmaPt", "sqrt(fPxMothNew * fPxMothNew + fPyMothNew * fPyMothNew)")
 else:
     dataDf = dataDf.Define("fKstar", "calcKstar(fPxMoth, fPyMoth, fPzMoth, fPxPr, fPyPr, fPzPr, 1.1965, 0.93827)")  # masses in GeV/c2
+    dataDf = dataDf.Define("fSigmaPt", "sqrt(fPxMoth * fPxMoth + fPyMoth * fPyMoth)")
 
 dataDf = dataDf.Define("fMassSigma", "calcMass(fPxMoth, fPyMoth, fPzMoth, 0.938272, fPxDaug, fPyDaug, fPzDaug, 0.13957)")  # masses in GeV/c2
 dataDf = dataDf.Define("fKinkAngle", "calcKinkAngle(fPxMoth, fPyMoth, fPzMoth, fPxDaug, fPyDaug, fPzDaug)")  # masses in GeV/c2
 dataDf = dataDf.Define("fArmAlpha", "armAlpha(fPxMoth, fPyMoth, fPzMoth, fPxDaug, fPyDaug, fPzDaug)")  # masses in GeV/c2
 dataDf = dataDf.Define("fArmQt", "armQt(fPxMoth, fPyMoth, fPzMoth, fPxDaug, fPyDaug, fPzDaug)")  # masses in GeV/c2
 dataDf = dataDf.Define("fPtProton", "sqrt(fPxPr * fPxPr + fPyPr * fPyPr)")
-dataDf = dataDf.Define("fSigmaPt", "sqrt(fPxMoth * fPxMoth + fPyMoth * fPyMoth)")
 
 
 dataDf = dataDf.Filter(bantib_cut)
-dataSideBand = dataDf.Filter("fMassSigma > 1.25")  # side-band upper
+dataSideBand = dataDf.Filter("fMassSigma > 1.26 && fMassSigma < 1.3")  # side-band upper
 dataDf = dataDf.Filter("fArmQt < 0.2")  # kink angle cut
-hMassVsKStarBefCuts = dataDf.Histo2D(("hMassVsKStarBefCuts", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 100, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
-dataDf = dataDf.Filter("fMassSigma > 1.18 && fMassSigma < 1.22 && fSigmaPt > 1.2")  # signal region
+hMassVsKStarBefCuts = dataDf.Histo2D(("hMassVsKStarBefCuts", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 50, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
+dataDf = dataDf.Filter("fMassSigma > 1.14 && fMassSigma < 1.3 && fSigmaPt > 1.3")  # signal region
 
 ## create histogram of kstar
 hKstarData = dataDf.Histo1D(("hKstarData", ";k* (GeV/#it{c});Counts", 300, 0., 3), "fKstar")
@@ -176,28 +177,39 @@ hMassSigmaData = dataDf.Histo1D(("hMassSigmaData", ";Mass #Sigma (GeV/#it{c}^{2}
 hKinkAngleData = dataDf.Histo1D(("hKinkAngleData", ";Kink Angle (rad);Counts", 100, 0., 1.5), "fKinkAngle")
 hPtProtonData = dataDf.Histo1D(("hPtProtonData", ";#it{p}_{T} proton (GeV/#it{c});Counts", 100, 0., 5), "fPtProton")
 hPtSigmaData = dataDf.Histo1D(("hPtSigmaData", ";#it{p}_{T} #Sigma (GeV/#it{c});Counts", 100, 0., 5), "fSigmaPt")
-hKStarVsMassSigma = dataDf.Histo2D(("hKStarVsMassSigma", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 100, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
+hKStarVsMassSigma = dataDf.Histo2D(("hKStarVsMassSigma", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 50, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
 hKStarVsPtSigma = dataDf.Histo2D(("hKStarVsPtSigma", ";#it{p}_{T} #Sigma (GeV/#it{c});k* (GeV/#it{c})", 100, 0., 5, 300, 0., 3), "fSigmaPt", "fKstar")
-hKStarSideband = dataSideBand.Histo1D(("hKStarSideband", ";k* (GeV/#it{c});Counts", 100, 0., 3), "fKstar")
+hKStarSideband = dataSideBand.Histo1D(("hKStarSideband", ";k* (GeV/#it{c});Counts", 300, 0., 3), "fKstar")
 
 if is_mc:
     dataDfSigma = dataDf.Filter("abs(fSigmaPDG)==3112")  # signal sample
     dataDfSigmaSideband = dataSideBand.Filter("abs(fSigmaPDG)==3112")  # signal sample in sideband
     dataBkg = dataDf.Filter("abs(fSigmaPDG)!=3112 && abs(fSigmaPDG)!=3222")  # background sample
+    dataBkgKaons = dataDf.Filter("abs(fSigmaPDG)==321 && abs(fDaughterPDG)==211")  # background sample with kaons
     dataSigmaPlus = dataDf.Filter("abs(fSigmaPDG)==3222")
     ## create histogram of kstar for background
 
-    hDecRadVsKstarSigmaMinus = dataDfSigma.Histo2D(("hDecRadVsKstarSigmaMinus", ";Decay Radius (cm);k* (GeV/#it{c})", 100, 0., 300., 100, 0., 3), "fSigmaDecRad", "fKstar")
-    hDecRadVsKstarSigmaPlus = dataSigmaPlus.Histo2D(("hDecRadVsKstarSigmaPlus", ";Decay Radius (cm);k* (GeV/#it{c})", 100, 0., 300., 100, 0., 3), "fSigmaDecRad", "fKstar")
+    hDecRadVsKstarSigmaMinus = dataDfSigma.Histo2D(("hDecRadVsKstarSigmaMinus", ";Decay Radius (cm);k* (GeV/#it{c})", 100, 0., 300., 300, 0., 3), "fSigmaDecRad", "fKstar")
+    hDecRadVsKstarSigmaPlus = dataSigmaPlus.Histo2D(("hDecRadVsKstarSigmaPlus", ";Decay Radius (cm);k* (GeV/#it{c})", 100, 0., 300., 300, 0., 3), "fSigmaDecRad", "fKstar")
 
-    hKstarSignal = dataDfSigma.Histo1D(("hKstarSignal", ";k* (GeV/#it{c});Counts", 100, 0., 3), "fKstar")
-    hKstarSignalSideband = dataDfSigmaSideband.Histo1D(("hKstarSignalSideband", ";k* (GeV/#it{c});Counts", 100, 0., 3), "fKstar")
+    hKstarSignal = dataDfSigma.Histo1D(("hKstarSignal", ";k* (GeV/#it{c});Counts", 300, 0., 3), "fKstar")
+    hKstarSignalSideband = dataDfSigmaSideband.Histo1D(("hKstarSignalSideband", ";k* (GeV/#it{c});Counts", 300, 0., 3), "fKstar")
+
+    ## search if there is a column named fGenKStar
+    if "fGenKStar" in dataDfSigma.GetColumnNames():
+        hKstarGenSignal = dataDfSigma.Histo1D(("hKstarGenSignal", ";Generated k* (GeV/#it{c});Counts", 300, 0., 3), "fGenKStar")
+        dataDfSigma = dataDfSigma.Define("fKStarResolution", "fKstar - fGenKStar")
+        h2KStarMatrix = dataDfSigma.Histo2D(("h2KStarMatrix", ";Generated k* (GeV/#it{c});Reconstructed k* (GeV/#it{c})", 300, 0., 3, 300, 0., 3), "fGenKStar", "fKstar")
+        h2KStarResolutionVsKstar = dataDfSigma.Histo2D(("h2KStarResolutionVsKstar", ";k* (GeV/#it{c});k* Resolution (GeV/#it{c})", 300, 0., 3, 40, -0.1, 0.1), "fGenKStar", "fKStarResolution")
+
     hMassSigmaSignal = dataDfSigma.Histo1D(("hMassSigmaSignal", ";Mass #Sigma (GeV/#it{c}^{2});Counts", 100, 1.1, 1.3), "fMassSigma")
+    hPtSigmaSignal = dataDfSigma.Histo1D(("hPtSigmaSignal", ";#it{p}_{T} #Sigma (GeV/#it{c});Counts", 100, 0., 5), "fSigmaPt")
     hKinkAngleSignal = dataDfSigma.Histo1D(("hKinkAngleSignal", ";Kink Angle (rad);Counts", 100, 0., 1.5), "fKinkAngle")
     hPtSignal = dataDfSigma.Histo1D(("hPtSigmaSignal", ";#it{p}_{T} #Sigma (GeV/#it{c});Counts", 100, 0., 5), "fSigmaPt")
 
     hKstarBkg = dataBkg.Histo1D(("hKstarBkg", ";k* (GeV/#it{c});Counts", 300, 0., 3), "fKstar") 
-    h2KstarMassSigmaBkg = dataBkg.Histo2D(("h2KstarMassSigmaBkg", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 30, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
+    h2KstarMassSigmaBkg = dataBkg.Histo2D(("h2KstarMassSigmaBkg", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 50, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
+    h2KstarMassSigmaKaonBkg = dataBkgKaons.Histo2D(("h2KstarMassSigmaKaonBkg", ";Mass #Sigma (GeV/#it{c}^{2});k* (GeV/#it{c})", 50, 1.1, 1.3, 300, 0., 3), "fMassSigma", "fKstar")
     hMassSigmaBkg = dataBkg.Histo1D(("hMassSigmaBkg", ";Mass #Sigma (GeV/#it{c}^{2});Counts", 100, 1.1, 1.3), "fMassSigma")
     hKinkAngleBkg = dataBkg.Histo1D(("hKinkAngleBkg", ";Kink Angle (rad);Counts", 100, 0., 1.5), "fKinkAngle")
 
@@ -210,13 +222,13 @@ if is_mc:
     hPurityPtSigma = hPtSignal.Clone("hPurityPtSigma")
     hPurityPtSigma.Divide(hPtSigmaData.GetPtr())
 
-    hSigmaPlusKstar = dataSigmaPlus.Histo1D(("hSigmaPlusKstar", ";k* (GeV/#it{c});Counts", 100, 0., 3), "fKstar")   
+    hSigmaPlusKstar = dataSigmaPlus.Histo1D(("hSigmaPlusKstar", ";k* (GeV/#it{c});Counts", 300, 0., 3), "fKstar")   
     hSigmaPlusToMinusRatio = hSigmaPlusKstar.Clone("hSigmaPlusToMinusRatio")
     hSigmaPlusToMinusRatio.Divide(hKstarSignal.GetPtr())
     hSigmaPlusDauPdg = dataSigmaPlus.Histo1D(("hSigmaPlusDauPdg", ";Daughter PDG;Counts", 2000, -1000, 1000), "fDaughterPDG")
     dataBkgLowKstar = dataBkg.Filter("fKstar < 0.2")
-    hSigmaPlusKStarPt = dataSigmaPlus.Histo2D(("hSigmaPlusKStarPt", ";#it{p}_{T} #Sigma (GeV/#it{c});k* (GeV/#it{c})", 100, 0., 5, 100, 0., 3), "fSigmaPt", "fKstar")
-    hSigmaMinusKStarPt = dataDfSigma.Histo2D(("hSigmaMinusKStarPt", ";#it{p}_{T} #Sigma (GeV/#it{c});k* (GeV/#it{c})", 100, 0., 5, 100, 0., 3), "fSigmaPt", "fKstar")
+    hSigmaPlusKStarPt = dataSigmaPlus.Histo2D(("hSigmaPlusKStarPt", ";#it{p}_{T} #Sigma (GeV/#it{c});k* (GeV/#it{c})", 100, 0., 5, 300, 0., 3), "fSigmaPt", "fKstar")
+    hSigmaMinusKStarPt = dataDfSigma.Histo2D(("hSigmaMinusKStarPt", ";#it{p}_{T} #Sigma (GeV/#it{c});k* (GeV/#it{c})", 100, 0., 5, 300, 0., 3), "fSigmaPt", "fKstar")
 
     hPDGMom = dataBkgLowKstar.Histo1D(("hPDGMom", ";Mother PDG;Counts", 2000, -10000, 10000), "fSigmaPDG")
     hPDGDau = dataBkgLowKstar.Histo1D(("hPDGDau", ";Daughter PDG;Counts", 2000, -10000, 10000), "fDaughterPDG")
@@ -240,11 +252,13 @@ hKStarSideband.Write()
 if is_mc:
     hKstarSignal.Write()
     hMassSigmaSignal.Write()
+    hPtSigmaSignal.Write()
     hKinkAngleSignal.Write()
     hDecRadVsKstarSigmaMinus.Write()
     hDecRadVsKstarSigmaPlus.Write()
     hKstarBkg.Write()
     h2KstarMassSigmaBkg.Write()
+    h2KstarMassSigmaKaonBkg.Write()
     hMassSigmaBkg.Write()
     hKinkAngleBkg.Write()
     hPurityKstar.Write()
@@ -256,6 +270,10 @@ if is_mc:
     hPDGMom.Write()
     hPDGDau.Write()
     # hPDGMomVsDau.Write()
+    if 'fGenKStar' in dataDfSigma.GetColumnNames():
+        hKstarGenSignal.Write()
+        h2KStarMatrix.Write()
+        h2KStarResolutionVsKstar.Write()
 
     hSigmaPlusKStarPt.Write()
     hSigmaMinusKStarPt.Write()
